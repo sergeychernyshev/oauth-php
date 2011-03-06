@@ -36,7 +36,6 @@ require_once dirname(__FILE__) . '/OAuthStoreSQL.php';
 
 class OAuthStorePDO extends OAuthStoreSQL
 {
-	private $conn; // PDO connection
 	private $lastaffectedrows;
 
 	/**
@@ -49,11 +48,9 @@ class OAuthStorePDO extends OAuthStoreSQL
 	 */
 	function __construct ( $options = array() )
 	{
-		if (isset($options['conn']))
-		{
-			$this->conn = $options['conn'];
-		}
-		else if (isset($options['dsn']))
+		parent::__construct($options);
+
+		if (is_null($this->conn) && isset($options['dsn']))
 		{
 			try 
 			{
