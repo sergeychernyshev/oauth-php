@@ -39,10 +39,56 @@ require_once dirname(__FILE__) . '/OAuthStoreSQL.php';
 class OAuthStoreMySQL extends OAuthStoreSQL
 {
 	/**
-	 * The MySQL connection 
+	 * Construct the OAuthStoreMySQL.
+	 * In the options you have to supply either:
+	 * - server, username, password and database (for a mysql_connect)
+	 * - conn (for the connection to be used)
+	 *
+	 * @param array options
 	 */
-	protected $conn;
+	function __construct ( $options = array() )
+	{
+		parent::__construct($options);
 
+		if (is_null($this->conn))
+		{
+			if (isset($options['server']))
+			{
+				$server   = $options['server'];
+				$username = $options['username'];
+
+				if (isset($options['password']))
+				{
+					$this->conn = mysql_connect($server, $username, $options['password']);
+				}
+				else
+				{
+					$this->conn = mysql_connect($server, $username);
+				}
+			}
+			else
+			{
+				var_dump(debug_backtrace());
+
+				// Try the default mysql connect
+				$this->conn = mysql_connect();
+			}
+
+			if ($this->conn === false)
+			{
+				throw new OAuthException2('Could not connect to MySQL database: ' . mysql_error());
+			}
+
+			if (isset($options['database']))
+			{
+				if (!mysql_select_db($options['database'], $this->conn))
+				{
+					$this->sql_errcheck();
+				}
+			}
+			$this->query('set character set utf8');
+		}
+	}
 	/**
 	 * Initialise the database
 	 */

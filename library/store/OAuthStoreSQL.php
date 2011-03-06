@@ -50,59 +50,36 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 	 */
 	protected $max_request_token_ttl = 3600;
 	
+	/**
+	 * Connection object
+	 */
+	protected $conn;
 
 	/**
-	 * Construct the OAuthStoreMySQL.
-	 * In the options you have to supply either:
-	 * - server, username, password and database (for a mysql_connect)
-	 * - conn (for the connection to be used)
+	 * Table prefix
+	 */
+	protected $table_prefix = '';
+
+	/**
+	 * Construct the OAuthStoreSQL
+	 * You can pass 'table_prefix' to override the default one (empty)
+	 * You can also pass a connecton object 'conn'
+	 * Subclasses should also override to set the object in case it wasn't passed
 	 * 
 	 * @param array options
 	 */
 	function __construct ( $options = array() )
 	{
+		if (isset($options['table_prefix']))
+		{
+			$this->table_prefix = $options['table_prefix'];
+		}
+
 		if (isset($options['conn']))
 		{
 			$this->conn = $options['conn'];
 		}
-		else
-		{
-			if (isset($options['server']))
-			{
-				$server   = $options['server'];
-				$username = $options['username'];
-				
-				if (isset($options['password']))
-				{
-					$this->conn = mysql_connect($server, $username, $options['password']);
-				}
-				else
-				{
-					$this->conn = mysql_connect($server, $username);
-				}
-			}
-			else
-			{
-				// Try the default mysql connect
-				$this->conn = mysql_connect();
-			}
-
-			if ($this->conn === false)
-			{
-				throw new OAuthException2('Could not connect to MySQL database: ' . mysql_error());
-			}
-
-			if (isset($options['database']))
-			{
-				if (!mysql_select_db($options['database'], $this->conn))
-				{
-					$this->sql_errcheck();
-				}
-			}
-			$this->query('set character set utf8');
-		}
 	}
-
 
 	/**
 	 * Find stored credentials for the consumer key and token. Used by an OAuth server
@@ -122,7 +99,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 						SELECT	osr_id, 
 								osr_consumer_key		as consumer_key,
 								osr_consumer_secret		as consumer_secret
-						FROM oauth_server_registry
+						FROM '.$this->table_prefix.'oauth_server_registry
 						WHERE osr_consumer_key	= \'%s\'
 						  AND osr_enabled		= 1
 						', 
@@ -146,8 +123,8 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 								osr_consumer_secret		as consumer_secret,
 								ost_token				as token,
 								ost_token_secret		as token_secret
-						FROM oauth_server_registry
-								JOIN oauth_server_token
+						FROM '.$this->table_prefix.'oauth_server_registry
+								JOIN '.$this->table_prefix.'oauth_server_token
 								ON ost_osr_id_ref = osr_id
 						WHERE ost_token_type	= \'%s\'
 						  AND osr_consumer_key	= \'%s\'
@@ -206,8 +183,8 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 							oct_token				as token,
 							oct_token_secret		as token_secret,
 							ocr_signature_methods	as signature_methods
-					FROM oauth_consumer_registry
-						JOIN oauth_consumer_token ON oct_ocr_id_ref = ocr_id
+					FROM '.$this->table_prefix.'oauth_consumer_registry
+						JOIN '.$this->table_prefix.'oauth_consumer_token ON oct_ocr_id_ref = ocr_id
 					WHERE ocr_server_uri_host = \'%s\'
 					  AND ocr_server_uri_path = LEFT(\'%s\', LENGTH(ocr_server_uri_path))
 					  AND (ocr_usa_id_ref = \'%d\' OR ocr_usa_id_ref IS NULL)
@@ -260,8 +237,8 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 							ocr_authorize_uri		as authorize_uri,
 							ocr_access_token_uri	as access_token_uri,
 							IF(oct_token_ttl >= \'9999-12-31\', NULL, UNIX_TIMESTAMP(oct_token_ttl) - UNIX_TIMESTAMP(NOW())) as token_ttl
-					FROM oauth_consumer_registry
-							JOIN oauth_consumer_token
+					FROM '.$this->table_prefix.'oauth_consumer_registry
+							JOIN '.$this->table_prefix.'oauth_consumer_token
 							ON oct_ocr_id_ref = ocr_id
 					WHERE ocr_consumer_key = \'%s\'
 					  AND oct_token_type   = \'%s\'
@@ -325,7 +302,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 		{
 			$ocr_id = $this->query_one('
 						SELECT ocr_id
-						FROM oauth_consumer_registry
+						FROM '.$this->table_prefix.'oauth_consumer_registry
 						WHERE ocr_consumer_key = \'%s\'
 						AND (ocr_usa_id_ref = %d OR ocr_usa_id_ref IS NULL)
 						AND ocr_server_uri = \'%s\'
@@ -335,7 +312,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 		{
 			$ocr_id = $this->query_one('
 						SELECT ocr_id
-						FROM oauth_consumer_registry
+						FROM '.$this->table_prefix.'oauth_consumer_registry
 						WHERE ocr_consumer_key = \'%s\'
 						AND (ocr_usa_id_ref = %d OR ocr_usa_id_ref IS NULL)
 						', $consumer_key, $user_id);
@@ -358,7 +335,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 
 		// Delete any old tokens with the same type and name for this user/server combination
 		$this->query('
-					DELETE FROM oauth_consumer_token
+					DELETE FROM '.$this->table_prefix.'oauth_consumer_token
 					WHERE oct_ocr_id_ref = %d
 					  AND oct_usa_id_ref = %d
 					  AND oct_token_type = LOWER(\'%s\')
@@ -371,7 +348,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 
 		// Insert the new token
 		$this->query('
-					INSERT IGNORE INTO oauth_consumer_token
+					INSERT IGNORE INTO '.$this->table_prefix.'oauth_consumer_token
 					SET oct_ocr_id_ref	= %d,
 						oct_usa_id_ref  = %d,
 						oct_name		= \'%s\',
@@ -407,7 +384,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 		if ($user_is_admin)
 		{
 			$this->query('
-					DELETE FROM oauth_consumer_registry
+					DELETE FROM '.$this->table_prefix.'oauth_consumer_registry
 					WHERE ocr_consumer_key = \'%s\'
 					  AND (ocr_usa_id_ref = %d OR ocr_usa_id_ref IS NULL)
 					', $consumer_key, $user_id);
@@ -415,7 +392,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 		else
 		{
 			$this->query('
-					DELETE FROM oauth_consumer_registry
+					DELETE FROM '.$this->table_prefix.'oauth_consumer_registry
 					WHERE ocr_consumer_key = \'%s\'
 					  AND ocr_usa_id_ref   = %d
 					', $consumer_key, $user_id);
@@ -444,7 +421,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 						ocr_request_token_uri	as request_token_uri,
 						ocr_authorize_uri		as authorize_uri,
 						ocr_access_token_uri	as access_token_uri
-				FROM oauth_consumer_registry
+				FROM '.$this->table_prefix.'oauth_consumer_registry
 				WHERE ocr_consumer_key = \'%s\'
 				  AND (ocr_usa_id_ref = %d OR ocr_usa_id_ref IS NULL)
 				',	$consumer_key, $user_id);
@@ -500,7 +477,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 							ocr_request_token_uri	as request_token_uri,
 							ocr_authorize_uri		as authorize_uri,
 							ocr_access_token_uri	as access_token_uri
-					FROM oauth_consumer_registry
+					FROM '.$this->table_prefix.'oauth_consumer_registry
 					WHERE ocr_server_uri_host = \'%s\'
 					  AND ocr_server_uri_path = LEFT(\'%s\', LENGTH(ocr_server_uri_path))
 					  AND (ocr_usa_id_ref = \'%d\' OR ocr_usa_id_ref IS NULL)
@@ -541,8 +518,8 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 							ocr_authorize_uri		as authorize_uri,
 							ocr_access_token_uri	as access_token_uri,
 							oct_timestamp			as timestamp
-					FROM oauth_consumer_registry
-							JOIN oauth_consumer_token
+					FROM '.$this->table_prefix.'oauth_consumer_registry
+							JOIN '.$this->table_prefix.'oauth_consumer_token
 							ON oct_ocr_id_ref = ocr_id
 					WHERE oct_usa_id_ref = %d
 					  AND oct_token_type = \'access\'
@@ -563,8 +540,8 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 	{
 		$count = $this->query_one('
 					SELECT COUNT(oct_id)
-					FROM oauth_consumer_token
-							JOIN oauth_consumer_registry
+					FROM '.$this->table_prefix.'oauth_consumer_token
+							JOIN '.$this->table_prefix.'oauth_consumer_registry
 							ON oct_ocr_id_ref = ocr_id
 					WHERE oct_token_type   = \'access\'
 					  AND ocr_consumer_key = \'%s\'
@@ -600,8 +577,8 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 							ocr_authorize_uri		as authorize_uri,
 							ocr_access_token_uri	as access_token_uri,
 							oct_timestamp			as timestamp
-					FROM oauth_consumer_registry
-							JOIN oauth_consumer_token
+					FROM '.$this->table_prefix.'oauth_consumer_registry
+							JOIN '.$this->table_prefix.'oauth_consumer_token
 							ON oct_ocr_id_ref = ocr_id
 					WHERE ocr_consumer_key = \'%s\'
 					  AND oct_usa_id_ref   = %d
@@ -631,9 +608,9 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 		if ($user_is_admin)
 		{
 			$this->query('
-				DELETE oauth_consumer_token 
-				FROM oauth_consumer_token
-						JOIN oauth_consumer_registry
+				DELETE '.$this->table_prefix.'oauth_consumer_token
+				FROM '.$this->table_prefix.'oauth_consumer_token
+						JOIN '.$this->table_prefix.'oauth_consumer_registry
 						ON oct_ocr_id_ref = ocr_id
 				WHERE ocr_consumer_key	= \'%s\'
 				  AND oct_token			= \'%s\'
@@ -642,9 +619,9 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 		else
 		{
 			$this->query('
-				DELETE oauth_consumer_token 
-				FROM oauth_consumer_token
-						JOIN oauth_consumer_registry
+				DELETE '.$this->table_prefix.'oauth_consumer_token
+				FROM '.$this->table_prefix.'oauth_consumer_token
+						JOIN '.$this->table_prefix.'oauth_consumer_registry
 						ON oct_ocr_id_ref = ocr_id
 				WHERE ocr_consumer_key	= \'%s\'
 				  AND oct_token			= \'%s\'
@@ -673,7 +650,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 		{
 			// Set maximum time to live for this token
 			$this->query('
-						UPDATE oauth_consumer_token, oauth_consumer_registry
+						UPDATE '.$this->table_prefix.'oauth_consumer_token, '.$this->table_prefix.'oauth_consumer_registry
 						SET ost_token_ttl = DATE_ADD(NOW(), INTERVAL %d SECOND)
 						WHERE ocr_consumer_key	= \'%s\'
 						  AND ocr_server_uri = \'%s\'
@@ -685,7 +662,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 		{
 			// Set maximum time to live for this token
 			$this->query('
-						UPDATE oauth_consumer_token, oauth_consumer_registry
+						UPDATE '.$this->table_prefix.'oauth_consumer_token, '.$this->table_prefix.'oauth_consumer_registry
 						SET ost_token_ttl = DATE_ADD(NOW(), INTERVAL %d SECOND)
 						WHERE ocr_consumer_key	= \'%s\'
 						  AND oct_ocr_id_ref    = ocr_id
@@ -741,7 +718,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 							ocr_request_token_uri	as request_token_uri,
 							ocr_authorize_uri		as authorize_uri,
 							ocr_access_token_uri	as access_token_uri
-					FROM oauth_consumer_registry
+					FROM '.$this->table_prefix.'oauth_consumer_registry
 					'.$where.'
 					ORDER BY ocr_server_uri_host, ocr_server_uri_path
 					', $args);
@@ -774,7 +751,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 		{
 			$exists = $this->query_one('
 						SELECT ocr_id
-						FROM oauth_consumer_registry
+						FROM '.$this->table_prefix.'oauth_consumer_registry
 						WHERE ocr_consumer_key = \'%s\'
 						  AND ocr_id <> %d
 						  AND (ocr_usa_id_ref = %d OR ocr_usa_id_ref IS NULL)
@@ -784,7 +761,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 		{
 			$exists = $this->query_one('
 						SELECT ocr_id
-						FROM oauth_consumer_registry
+						FROM '.$this->table_prefix.'oauth_consumer_registry
 						WHERE ocr_consumer_key = \'%s\'
 						  AND (ocr_usa_id_ref = %d OR ocr_usa_id_ref IS NULL)
 						', $server['consumer_key'], $user_id);
@@ -835,7 +812,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 			{
 				$ocr_usa_id_ref = $this->query_one('
 									SELECT ocr_usa_id_ref
-									FROM oauth_consumer_registry
+									FROM '.$this->table_prefix.'oauth_consumer_registry
 									WHERE ocr_id = %d
 									', $server['id']);
 				
@@ -847,7 +824,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 			
 			// Update the consumer registration	
 			$this->query('
-					UPDATE oauth_consumer_registry
+					UPDATE '.$this->table_prefix.'oauth_consumer_registry
 					SET ocr_consumer_key    	= \'%s\',
 						ocr_consumer_secret 	= \'%s\',
 						ocr_server_uri	    	= \'%s\',
@@ -882,7 +859,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 			}
 
 			$this->query('
-					INSERT INTO oauth_consumer_registry
+					INSERT INTO '.$this->table_prefix.'oauth_consumer_registry
 					SET ocr_consumer_key    	= \'%s\',
 						ocr_consumer_secret 	= \'%s\',
 						ocr_server_uri	    	= \'%s\',
@@ -954,7 +931,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 			{
 				$osr_usa_id_ref = $this->query_one('
 									SELECT osr_usa_id_ref
-									FROM oauth_server_registry
+									FROM '.$this->table_prefix.'oauth_server_registry
 									WHERE osr_id = %d
 									', $consumer['id']);
 				
@@ -971,7 +948,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 					if (is_null($consumer['user_id']))
 					{
 						$this->query('
-							UPDATE oauth_server_registry
+							UPDATE '.$this->table_prefix.'oauth_server_registry
 							SET osr_usa_id_ref = NULL
 							WHERE osr_id = %d
 							', $consumer['id']);
@@ -979,7 +956,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 					else
 					{
 						$this->query('
-							UPDATE oauth_server_registry
+							UPDATE '.$this->table_prefix.'oauth_server_registry
 							SET osr_usa_id_ref = %d
 							WHERE osr_id = %d
 							', $consumer['user_id'], $consumer['id']);	
@@ -988,7 +965,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 			}
 			
 			$this->query('
-				UPDATE oauth_server_registry
+				UPDATE '.$this->table_prefix.'oauth_server_registry
 				SET osr_requester_name		= \'%s\',
 					osr_requester_email		= \'%s\',
 					osr_callback_uri		= \'%s\',
@@ -1044,7 +1021,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 			}
 
 			$this->query('
-				INSERT INTO oauth_server_registry
+				INSERT INTO '.$this->table_prefix.'oauth_server_registry
 				SET osr_enabled				= 1,
 					osr_status				= \'active\',
 					osr_usa_id_ref			= \'%s\',
@@ -1094,7 +1071,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 		if ($user_is_admin)
 		{
 			$this->query('
-					DELETE FROM oauth_server_registry
+					DELETE FROM '.$this->table_prefix.'oauth_server_registry
 					WHERE osr_consumer_key = \'%s\'
 					  AND (osr_usa_id_ref = %d OR osr_usa_id_ref IS NULL)
 					', $consumer_key, $user_id);
@@ -1102,7 +1079,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 		else
 		{
 			$this->query('
-					DELETE FROM oauth_server_registry
+					DELETE FROM '.$this->table_prefix.'oauth_server_registry
 					WHERE osr_consumer_key = \'%s\'
 					  AND osr_usa_id_ref   = %d
 					', $consumer_key, $user_id);
@@ -1124,7 +1101,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 	{
 		$consumer = $this->query_row_assoc('
 						SELECT	*
-						FROM oauth_server_registry
+						FROM '.$this->table_prefix.'oauth_server_registry
 						WHERE osr_consumer_key = \'%s\'
 						', $consumer_key);
 		
@@ -1158,7 +1135,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 	{
 		$consumer = $this->query_one('
 						SELECT osr_consumer_key
-						FROM oauth_server_registry
+						FROM '.$this->table_prefix.'oauth_server_registry
 						WHERE osr_consumer_key LIKE \'sc-%%\'
 						  AND osr_usa_id_ref IS NULL
 						');
@@ -1167,7 +1144,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 		{
 			$consumer_key = 'sc-'.$this->generateKey(true);
 			$this->query('
-				INSERT INTO oauth_server_registry
+				INSERT INTO '.$this->table_prefix.'oauth_server_registry
 				SET osr_enabled				= 1,
 					osr_status				= \'active\',
 					osr_usa_id_ref			= NULL,
@@ -1208,7 +1185,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 		$secret = $this->generateKey();
 		$osr_id	= $this->query_one('
 						SELECT osr_id
-						FROM oauth_server_registry
+						FROM '.$this->table_prefix.'oauth_server_registry
 						WHERE osr_consumer_key = \'%s\'
 						  AND osr_enabled      = 1
 						', $consumer_key);
@@ -1233,7 +1210,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
  		}
 		
 		$this->query('
-				INSERT INTO oauth_server_token
+				INSERT INTO '.$this->table_prefix.'oauth_server_token
 				SET ost_osr_id_ref		= %d,
 					ost_usa_id_ref		= 1,
 					ost_token			= \'%s\',
@@ -1274,8 +1251,8 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
  						osr_application_title as application_title,
  						osr_application_descr as application_descr,
  						osr_application_uri   as application_uri					
-				FROM oauth_server_token
-						JOIN oauth_server_registry
+				FROM '.$this->table_prefix.'oauth_server_token
+						JOIN '.$this->table_prefix.'oauth_server_registry
 						ON ost_osr_id_ref = osr_id
 				WHERE ost_token_type = \'request\'
 				  AND ost_token      = \'%s\'
@@ -1294,7 +1271,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 	public function deleteConsumerRequestToken ( $token )
 	{
 		$this->query('
-					DELETE FROM oauth_server_token
+					DELETE FROM '.$this->table_prefix.'oauth_server_token
 					WHERE ost_token 	 = \'%s\'
 					  AND ost_token_type = \'request\'
 					', $token);
@@ -1314,7 +1291,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
  		$verifier = substr(md5(rand()),0,10);
 		
 		$this->query('
-					UPDATE oauth_server_token
+					UPDATE '.$this->table_prefix.'oauth_server_token
 					SET ost_authorized    = 1,
 						ost_usa_id_ref    = %d,
 						ost_timestamp     = NOW(),
@@ -1337,8 +1314,8 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 	{
 		$count = $this->query_one('
 					SELECT COUNT(ost_id)
-					FROM oauth_server_token
-							JOIN oauth_server_registry
+					FROM '.$this->table_prefix.'oauth_server_token
+							JOIN '.$this->table_prefix.'oauth_server_registry
 							ON ost_osr_id_ref = osr_id
 					WHERE ost_token_type   = \'access\'
 					  AND osr_consumer_key = \'%s\'
@@ -1377,7 +1354,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 
 		 	// 1.0a Compatibility : check token against oauth_verifier
 		 	$this->query('
-		 				UPDATE oauth_server_token
+						UPDATE '.$this->table_prefix.'oauth_server_token
 		 				SET ost_token			= \'%s\',
 		 					ost_token_secret	= \'%s\',
 		 					ost_token_type		= \'access\',
@@ -1393,7 +1370,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 
 		 	// 1.0
 		 	$this->query('
-		 				UPDATE oauth_server_token
+						UPDATE '.$this->table_prefix.'oauth_server_token
 		 				SET ost_token			= \'%s\',
 		 					ost_token_secret	= \'%s\',
 		 					ost_token_type		= \'access\',
@@ -1414,7 +1391,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 		$ret = array('token' => $new_token, 'token_secret' => $new_secret);
 		$ttl = $this->query_one('
 					SELECT	IF(ost_token_ttl >= \'9999-12-31\', NULL, UNIX_TIMESTAMP(ost_token_ttl) - UNIX_TIMESTAMP(NOW())) as token_ttl
-					FROM oauth_server_token
+					FROM '.$this->table_prefix.'oauth_server_token
 					WHERE ost_token = \'%s\'', $new_token);
 
 		if (is_numeric($ttl))
@@ -1445,8 +1422,8 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 						osr_application_title	as application_title,
 						osr_application_descr	as application_descr,
 						osr_callback_uri		as callback_uri
-				FROM oauth_server_token
-						JOIN oauth_server_registry
+				FROM '.$this->table_prefix.'oauth_server_token
+						JOIN '.$this->table_prefix.'oauth_server_registry
 						ON ost_osr_id_ref = osr_id
 				WHERE ost_token_type = \'access\'
 				  AND ost_token      = \'%s\'
@@ -1474,7 +1451,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 		if ($user_is_admin)
 		{
 			$this->query('
-						DELETE FROM oauth_server_token
+						DELETE FROM '.$this->table_prefix.'oauth_server_token
 						WHERE ost_token 	 = \'%s\'
 						  AND ost_token_type = \'access\'
 						', $token);
@@ -1482,7 +1459,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 		else
 		{
 			$this->query('
-						DELETE FROM oauth_server_token
+						DELETE FROM '.$this->table_prefix.'oauth_server_token
 						WHERE ost_token 	 = \'%s\'
 						  AND ost_token_type = \'access\'
 						  AND ost_usa_id_ref = %d
@@ -1509,7 +1486,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 		{
 			// Set maximum time to live for this token
 			$this->query('
-						UPDATE oauth_server_token
+						UPDATE '.$this->table_prefix.'oauth_server_token
 						SET ost_token_ttl = DATE_ADD(NOW(), INTERVAL %d SECOND)
 						WHERE ost_token 	 = \'%s\'
 						  AND ost_token_type = \'access\'
@@ -1541,7 +1518,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 						osr_requester_name		as requester_name,
 						osr_requester_email		as requester_email,
 						osr_callback_uri		as callback_uri
-				FROM oauth_server_registry
+				FROM '.$this->table_prefix.'oauth_server_registry
 				WHERE (osr_usa_id_ref = %d OR osr_usa_id_ref IS NULL)
 				ORDER BY osr_application_title
 				', $user_id);
@@ -1566,7 +1543,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 						osr_application_uri		as application_uri,
 						osr_application_title	as application_title,
 						osr_application_descr	as application_descr
-				FROM oauth_server_registry
+				FROM '.$this->table_prefix.'oauth_server_registry
 				ORDER BY osr_application_title
 				');
 		// TODO: pagination
@@ -1594,8 +1571,8 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 						ost_token_secret		as token_secret,
 						ost_referrer_host		as token_referrer_host,
 						osr_callback_uri		as callback_uri
-				FROM oauth_server_registry
-					JOIN oauth_server_token
+				FROM '.$this->table_prefix.'oauth_server_registry
+					JOIN '.$this->table_prefix.'oauth_server_token
 					ON ost_osr_id_ref = osr_id
 				WHERE ost_usa_id_ref = %d
 				  AND ost_token_type = \'access\'
@@ -1621,7 +1598,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 		/* removed in Appendix A of RFC 5849
 		$r = $this->query_row('
 							SELECT MAX(osn_timestamp), MAX(osn_timestamp) > %d + %d
-							FROM oauth_server_nonce
+							FROM '.$this->table_prefix.'oauth_server_nonce
 							WHERE osn_consumer_key = \'%s\'
 							  AND osn_token        = \'%s\'
 							', $timestamp, $this->max_timestamp_skew, $consumer_key, $token);
@@ -1633,7 +1610,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 		
 		// Insert the new combination
 		$this->query('
-				INSERT IGNORE INTO oauth_server_nonce
+				INSERT IGNORE INTO '.$this->table_prefix.'oauth_server_nonce
 				SET osn_consumer_key	= \'%s\',
 					osn_token			= \'%s\',
 					osn_timestamp		= %d,
@@ -1647,7 +1624,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 
 		// Clean up all timestamps older than the one we just received
 		$this->query('
-				DELETE FROM oauth_server_nonce
+				DELETE FROM '.$this->table_prefix.'oauth_server_nonce
 				WHERE osn_consumer_key	= \'%s\'
 				  AND osn_token			= \'%s\'
 				  AND osn_timestamp     < %d - %d
@@ -1696,7 +1673,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 		$ps[] = "olg_usa_id_ref = NULLIF(%d,0)";				$args[] = $user_id;
 		$ps[] = "olg_remote_ip  = IFNULL(INET_ATON('%s'),0)";	$args[] = $remote_ip;
 
-		$this->query('INSERT INTO oauth_log SET '.implode(',', $ps), $args);
+		$this->query('INSERT INTO '.$this->table_prefix.'oauth_log SET '.implode(',', $ps), $args);
 	}
 	
 	
@@ -1753,7 +1730,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 							olg_notes				AS notes,
 							olg_timestamp			AS timestamp,
 							INET_NTOA(olg_remote_ip) AS remote_ip
-					FROM oauth_log
+					FROM '.$this->table_prefix.'oauth_log
 					WHERE '.implode(' AND ', $where).'
 					ORDER BY olg_id DESC
 					LIMIT 0,100', $args);
