@@ -35,12 +35,11 @@
  * Modified from OAuthStoreMySQL to support MySQLi
  */
 
-require_once dirname(__FILE__) . '/OAuthStoreMySQL.php';
+require_once dirname(__FILE__) . '/OAuthStoreSQL.php';
 
 
-class OAuthStoreMySQLi extends OAuthStoreMySQL
+class OAuthStoreMySQLi extends OAuthStoreSQL
 {
-	
 	public function install() {
 		$sql = file_get_contents(dirname(__FILE__) . '/mysql/mysql.sql');
 		$ps  = explode('#--SPLIT--', $sql);
@@ -64,11 +63,9 @@ class OAuthStoreMySQLi extends OAuthStoreMySQL
 	 */
 	function __construct ( $options = array() )
 	{
-		if (isset($options['conn']))
-		{
-			$this->conn = $options['conn'];
-		}
-		else
+		parent::__construct($options);
+
+		if (is_null($this->conn))
 		{
 			if (isset($options['server']))
 			{
@@ -77,22 +74,22 @@ class OAuthStoreMySQLi extends OAuthStoreMySQL
 				
 				if (isset($options['password']))
 				{
-					$this->conn = ($GLOBALS["___mysqli_ston"] = mysqli_connect($server,  $username,  $options['password']));
+					$this->conn = mysqli_connect($server,  $username,  $options['password']);
 				}
 				else
 				{
-					$this->conn = ($GLOBALS["___mysqli_ston"] = mysqli_connect($server,  $username));
+					$this->conn = mysqli_connect($server,  $username);
 				}
 			}
 			else
 			{
 				// Try the default mysql connect
-				$this->conn = ($GLOBALS["___mysqli_ston"] = mysqli_connect());
+				$this->conn = mysqli_connect();
 			}
 
 			if ($this->conn === false)
 			{
-				throw new OAuthException2('Could not connect to MySQL database: ' . ((is_object($GLOBALS["___mysqli_ston"])) ? mysqli_error($GLOBALS["___mysqli_ston"]) : (($___mysqli_res = mysqli_connect_error()) ? $___mysqli_res : false)));
+				throw new OAuthException2('Could not connect to MySQL database: ' . mysqli_connect_error());
 			}
 
 			if (isset($options['database']))
@@ -294,7 +291,7 @@ class OAuthStoreMySQLi extends OAuthStoreMySQL
 	{
 		if (((is_object($this->conn)) ? mysqli_errno($this->conn) : (($___mysqli_res = mysqli_connect_errno()) ? $___mysqli_res : false)))
 		{
-			$msg =  "SQL Error in OAuthStoreMySQL: ".((is_object($this->conn)) ? mysqli_error($this->conn) : (($___mysqli_res = mysqli_connect_error()) ? $___mysqli_res : false))."\n\n" . $sql;
+			$msg =  "SQL Error in OAuthStoreMySQLi: ".((is_object($this->conn)) ? mysqli_error($this->conn) : (($___mysqli_res = mysqli_connect_error()) ? $___mysqli_res : false))."\n\n" . $sql;
 			throw new OAuthException2($msg);
 		}
 	}
