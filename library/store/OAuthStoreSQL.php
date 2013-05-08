@@ -769,6 +769,7 @@ abstract class OAuthStoreSQL extends OAuthStoreAbstract
 
 		if ($exists)
 		{
+			return $server['consumer_key'];
 			throw new OAuthException2('The server with key "'.$server['consumer_key'].'" has already been registered');
 		}
 
